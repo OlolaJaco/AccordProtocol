@@ -9,137 +9,219 @@
 [![All Contributors](https://img.shields.io/badge/all_contributors-1-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
-M-of-N multisig governance and treasury management on Stellar Soroban.
+**M-of-N multisig treasury management on Stellar Soroban — no trusted intermediaries, no single points of failure.**
 
-Accord lets any group of co-owners manage a shared on-chain treasury with transparent proposal lifecycles, threshold-based approvals, and auditable execution history — all enforced on-chain with zero trusted intermediaries.
+---
 
-## Current Testnet Deployment
+## The Problem
 
-- **Contract name:** `accord` (`contracts/accord`)
-- **Contract ID:** _(deploy instructions below — replace with your deployed ID)_
-- **Network:** Testnet
-- **Explorer:** `https://stellar.expert/explorer/testnet`
+Shared crypto treasuries are hard to manage safely. Most teams resort to one of three bad options:
 
-> After you run `scripts/deploy.sh` you will get a contract ID. Add it to `frontend/.env.local` as `VITE_CONTRACT_ADDRESS=<id>`.
+- **Single-key wallets** — one person controls everything. One compromise = total loss.
+- **Centralised services** — custody handed to a third party. You trust them, not code.
+- **Complex L1 multisigs** — expensive gas, slow UX, inaccessible to non-technical co-owners.
+
+Accord is a fourth option: a lightweight, fully on-chain multisig built on Stellar Soroban. Every proposal, approval, and execution is recorded on-chain and verifiable by anyone. The contract holds the funds — no one person does.
+
+---
+
+## What Accord Does
+
+Any group of co-owners can deploy Accord and manage a shared treasury with configurable M-of-N approval rules. The full lifecycle — from creating a payment proposal to executing the transfer — happens on-chain and through a clean web interface.
+
+```
+Owner A creates a proposal → Owner B & C approve → threshold met → any owner executes
+```
+
+**Key properties:**
+
+- **Threshold-based approvals** — set any M-of-N rule (e.g. 2-of-3, 3-of-5)
+- **Proposal lifecycle** — `Pending → Ready → Executed | Expired | Revoked`
+- **Any Stellar token** — XLM, USDC, EURC, or any SEP-41 compatible token
+- **Deadline enforcement** — proposals auto-expire on-chain, no manual cleanup needed
+- **Upgradeable contract** — code can be improved without losing state or changing the contract ID
+- **Zero trusted intermediaries** — the contract is the only custodian
+
+---
+
+## Live Deployment (Testnet)
+
+| | |
+|---|---|
+| **Contract ID** | `CD4YAMHZETIO3GTHP4JB3SF2LQFQMZ6MW5FUNCTMXYGOVN6AAXDBQKJS` |
+| **Network** | Stellar Testnet |
+| **Explorer** | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CD4YAMHZETIO3GTHP4JB3SF2LQFQMZ6MW5FUNCTMXYGOVN6AAXDBQKJS) |
+| **Frontend** | _Deploy your own with the steps below_ |
+
+---
 
 ## Architecture
 
-```text
-Frontend (React + Vite) → Freighter Wallet → Soroban RPC → accord Contract
-        ^                                                        |
-        |─────────── event polling + state reads ─────────────|
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Browser (React + Vite)                │
+│                                                         │
+│  ┌──────────────┐    ┌──────────────────────────────┐  │
+│  │  Freighter   │    │   Read-only simulation calls  │  │
+│  │   Wallet     │    │   (no signing required)       │  │
+│  └──────┬───────┘    └──────────────┬───────────────┘  │
+│         │ sign tx                   │ simulateTransaction│
+└─────────┼───────────────────────────┼───────────────────┘
+          │                           │
+          ▼                           ▼
+   Soroban RPC (testnet.stellar.org)
+          │
+          ▼
+   ┌──────────────────────┐
+   │   accord contract    │
+   │  (Rust / Soroban SDK)│
+   │                      │
+   │  - Instance storage  │
+   │    owners, threshold │
+   │  - Persistent storage│
+   │    proposals,        │
+   │    approvals         │
+   └──────────────────────┘
 ```
 
-Detailed architecture: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+Read calls use `simulateTransaction` — no wallet needed, no fees. Write calls (approve, execute, create) go through Freighter for signing and are submitted to the network.
+
+Full details: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+
+---
 
 ## Repository Layout
 
-```text
-contracts/accord     Soroban smart contract (Rust)
-frontend/            React 18 + TypeScript + Tailwind web app
-scripts/             Deployment and utility automation
-docs/                Architecture, API, setup, security, deployment docs
-.github/workflows/   Contract + frontend CI pipelines
+```
+contracts/accord/        Soroban smart contract (Rust)
+  src/lib.rs             Contract logic — proposals, approvals, execution
+  src/test.rs            29 unit tests covering all lifecycle paths
+
+frontend/
+  src/lib/contract.ts    Read-only Soroban RPC calls
+  src/lib/submit.ts      Signed transaction builder and submitter
+  src/lib/wallet.ts      Freighter wallet integration
+  src/hooks/             useContract (live data), useWallet (wallet state)
+  src/pages/             Dashboard and History views
+  src/components/        ProposalCard, StatCard, CreateProposalModal, etc.
+
+scripts/
+  deploy.sh              Build, upload WASM, deploy contract
+
+docs/                    Setup, architecture, API reference, security, deployment
+
+.github/workflows/       CI: contract tests, frontend build, lint — run on every PR
 ```
 
-## Quick Start (3 Steps)
+---
 
-> **New Contributors:** See [`docs/SETUP.md`](./docs/SETUP.md) for comprehensive setup on macOS, Linux, and Windows (WSL2).
+## Getting Started
 
-1. **Install dependencies and configure environment**
-   ```bash
-   cp .env.example .env
-   cp .env.example frontend/.env.local
-   cd frontend && npm ci
-   ```
+> **New contributors:** See [`docs/SETUP.md`](./docs/SETUP.md) for full environment setup on macOS, Linux, and Windows (WSL2).
 
-2. **Run local checks**
-   ```bash
-   cd ../contracts/accord && cargo test
-   cd ../../frontend && npm run lint && npm run build
-   ```
+### 1. Clone and install
 
-3. **Run the frontend**
-   ```bash
-   npm run dev
-   ```
+```bash
+git clone https://github.com/thegreatfeez/accord-protocol.git
+cd accord-protocol
+cp frontend/.env.example frontend/.env.local
+cd frontend && npm ci
+```
 
-## Contract vs Frontend Commands
+### 2. Fill in your `.env.local`
 
-| Area | Command |
+```env
+VITE_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+VITE_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
+VITE_CONTRACT_ADDRESS=CD4YAMHZETIO3GTHP4JB3SF2LQFQMZ6MW5FUNCTMXYGOVN6AAXDBQKJS
+VITE_SIM_SOURCE=<any funded testnet public key>
+```
+
+`VITE_SIM_SOURCE` is just a funded testnet key used to build simulation transactions — it never signs anything. Get a free testnet account at [Friendbot](https://friendbot.stellar.org).
+
+### 3. Run the frontend
+
+```bash
+npm run dev
+```
+
+### 4. Run the contract tests
+
+```bash
+cd contracts/accord && cargo test
+# 29 tests, all should pass
+```
+
+---
+
+## Contract Functions
+
+| Function | Who can call | What it does |
+|---|---|---|
+| `initialize(owners, threshold)` | Anyone (once) | Sets up the multisig — owners list and M-of-N threshold |
+| `create_proposal(proposer, to, amount, token, description, deadline)` | Owners only | Creates a new transfer proposal |
+| `approve(approver, proposal_id)` | Owners only | Adds approval; auto-transitions to `Ready` at threshold |
+| `revoke(approver, proposal_id)` | Owners only | Removes approval; transitions back to `Pending` if needed |
+| `execute(executor, proposal_id)` | Owners only | Transfers tokens on-chain when proposal is `Ready` |
+| `upgrade(caller, new_wasm_hash)` | Owners only | Replaces contract code in-place — state and contract ID preserved |
+| `get_proposal(id)` | Anyone | Returns proposal with derived status |
+| `get_proposals_paged(offset, limit)` | Anyone | Paginated proposal list |
+| `get_owners()` | Anyone | Returns current owner list |
+| `get_threshold()` | Anyone | Returns current threshold |
+| `is_owner(address)` | Anyone | Checks if an address is an owner |
+| `has_approved(proposal_id, owner)` | Anyone | Checks if an owner has approved a specific proposal |
+
+Full API reference: [`docs/CONTRACT_API.md`](./docs/CONTRACT_API.md)
+
+---
+
+## Common Commands
+
+| Task | Command |
 |---|---|
-| Contract format | `cd contracts/accord && cargo fmt --check` |
-| Contract lint | `cd contracts/accord && cargo clippy -- -D warnings` |
-| Contract test | `cd contracts/accord && cargo test` |
-| Contract build (WASM) | `stellar contract build` |
-| Contract deploy | `bash scripts/deploy.sh` |
-| Frontend lint | `cd frontend && npm run lint` |
-| Frontend build | `cd frontend && npm run build` |
-| Frontend dev | `cd frontend && npm run dev` |
+| Run contract tests | `cd contracts/accord && cargo test` |
+| Check contract formatting | `cd contracts/accord && cargo fmt --check` |
+| Lint contract | `cd contracts/accord && cargo clippy -- -D warnings` |
+| Build WASM | `stellar contract build` |
+| Deploy contract | `bash scripts/deploy.sh` |
+| Run frontend dev server | `cd frontend && npm run dev` |
+| Build frontend | `cd frontend && npm run build` |
+| Lint frontend | `cd frontend && npm run lint` |
 
-## How It Works
-
-1. **Initialize** — A group of co-owners deploys the contract and sets an approval threshold (e.g. 2-of-3).
-2. **Propose** — Any owner creates a transfer proposal: specify recipient, amount, token, description, and deadline.
-3. **Approve** — Owners approve or revoke their approval individually. The proposal status updates in real time.
-4. **Execute** — Once the threshold is met, any owner can execute the proposal and the tokens are transferred on-chain.
-
-Proposals have a transparent lifecycle: `Pending → Ready → Executed | Expired`.
-
-## Tech Stack
-
-- **Smart contract:** Rust, `soroban-sdk 25`
-- **Frontend:** React 18, TypeScript, Tailwind CSS, Vite
-- **Blockchain:** Stellar Soroban (testnet-first workflow)
-- **CI/CD:** GitHub Actions
-
-## Live Network Links
-
-- Soroban Testnet RPC: `https://soroban-testnet.stellar.org`
-- Friendbot: `https://friendbot.stellar.org/?addr=<PUBLIC_KEY>`
-- Explorer (testnet): `https://stellar.expert/explorer/testnet`
-- Stellar Lab: `https://lab.stellar.org`
-
-## Documentation
-
-- Setup Guide: [`docs/SETUP.md`](./docs/SETUP.md)
-- Architecture: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
-- Contract API: [`docs/CONTRACT_API.md`](./docs/CONTRACT_API.md)
-- Security: [`docs/SECURITY.md`](./docs/SECURITY.md)
-- Deployment: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
-- Contributing: [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)
-
-## DevOps & Infrastructure
-
-- **CI coverage:** Contract tests (`cargo test`) and frontend lint + build run on every pull request.
-- **Docker:** A local Soroban node is supported via `docker compose up` (Soroban RPC on port 8000, Horizon on port 8001).
-- **Dependabot:** Weekly dependency updates enabled for Cargo and NPM.
+---
 
 ## Roadmap
 
-### Q3 2026 (Near-term)
+### Near-term
+- [ ] Real-time event feed for proposal activity (on-chain events → UI notifications)
+- [ ] Owner management proposals (add/remove owner via the proposal flow)
+- [ ] Revoke button in the UI
 
-- [ ] Freighter wallet integration in the frontend ([open issue](https://github.com/thegreatfeez/accord-protocol/issues))
-- [ ] Real-time event feed for proposal activity
-- [ ] Owner management UI (add/remove owner proposals)
-
-### Q4 2026 (Mid-term)
-
-- [ ] Multi-token treasury support
-- [ ] Time-locked execution (enforce delay after threshold is met)
-- [ ] Proposal categories and tagging
-
-### Q1 2027 (Long-term)
-
-- [ ] On-chain spending limits per owner
+### Mid-term
+- [ ] Multi-token treasury dashboard (aggregate balances for all held tokens)
+- [ ] Time-locked execution (enforce a delay after threshold is met)
 - [ ] Mobile-responsive UI
-- [ ] Soroban contract upgrade support
 
-## Contributor Onboarding
+### Long-term
+- [ ] Per-owner spending limits
+- [ ] Proposal categories and tagging
+- [ ] Mainnet deployment guide
 
-Welcome! Start with [`docs/SETUP.md`](./docs/SETUP.md) to configure your environment, then check [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) for the full contribution workflow including branch naming, PR expectations, and code standards.
+---
 
-Accord is participating in the [Stellar Drips Wave](https://drips.network/wave/stellar) — open issues are tagged for reward-eligible contributions.
+## Contributing
+
+Accord is an open-source project and welcomes contributions of all kinds — contract logic, frontend features, tests, documentation, and bug fixes.
+
+**Start here:** [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)
+
+The guide covers:
+- Branch naming and commit style
+- How to open a pull request
+- CI checks that must pass
+- How the contract upgrade flow works for merged changes
+
+---
 
 ## Contributors
 
@@ -159,9 +241,15 @@ Accord is participating in the [Stellar Drips Wave](https://drips.network/wave/s
 
 This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification. Contributions of any kind welcome!
 
-## Security Notice
+---
 
-This contract is **unaudited**. Do not use on mainnet with significant value until a formal audit is completed. See [`docs/SECURITY.md`](./docs/SECURITY.md) for responsible disclosure guidelines.
+## Security
+
+This contract is **unaudited**. Do not use on mainnet with significant funds until a formal security audit is completed.
+
+Found a vulnerability? See [`docs/SECURITY.md`](./docs/SECURITY.md) for responsible disclosure guidelines.
+
+---
 
 ## License
 

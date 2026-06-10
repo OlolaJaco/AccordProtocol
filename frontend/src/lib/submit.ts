@@ -1,0 +1,120 @@
+import {
+  Contract,
+  rpc,
+  TransactionBuilder,
+  nativeToScVal,
+  xdr,
+} from "@stellar/stellar-sdk";
+import { signTx } from "./wallet";
+
+const RPC_URL = import.meta.env.VITE_SOROBAN_RPC_URL as string;
+const CONTRACT_ID = import.meta.env.VITE_CONTRACT_ADDRESS as string;
+const NETWORK_PASSPHRASE = import.meta.env.VITE_NETWORK_PASSPHRASE as string;
+
+const server = new rpc.Server(RPC_URL);
+
+async function buildAndSubmit(
+  callerAddress: string,
+  fn: string,
+  args: xdr.ScVal[]
+): Promise<void> {
+  // 1. Load caller's account for sequence number
+  const account = await server.getAccount(callerAddress);
+  const contract = new Contract(CONTRACT_ID);
+
+  const tx = new TransactionBuilder(account, {
+    fee: "100000",
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(contract.call(fn, ...args))
+    .setTimeout(30)
+    .build();
+
+  // 2. Simulate to get auth entries + resource estimates
+  const sim = await server.simulateTransaction(tx);
+  if (!rpc.Api.isSimulationSuccess(sim)) {
+    const err = sim as rpc.Api.SimulateTransactionErrorResponse;
+    throw new Error(`Simulation failed: ${err.error ?? "unknown"}`);
+  }
+
+  // 3. Assemble — injects auth entries and resource fee
+  const assembled = rpc.assembleTransaction(tx, sim).build();
+
+  // 4. Sign via Freighter
+  const signed = await signTx(assembled.toXDR());
+  if (!signed.ok) throw new Error(signed.error);
+
+  // 5. Submit
+  const sent = await server.sendTransaction(
+    TransactionBuilder.fromXDR(signed.value, NETWORK_PASSPHRASE)
+  );
+
+  if (sent.status === "ERROR") {
+    throw new Error(`Submit failed: ${JSON.stringify(sent.errorResult)}`);
+  }
+
+  // 6. Poll until confirmed (or 30s timeout)
+  const hash = sent.hash;
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const res = await server.getTransaction(hash);
+    if (res.status === "SUCCESS") return;
+    if (res.status === "FAILED") {
+      throw new Error(`Transaction failed on-chain`);
+    }
+  }
+  throw new Error("Transaction not confirmed within 30s");
+}
+
+// ─── Public contract write functions ─────────────────────────────────────────
+// Function names must match the Rust contract exactly.
+
+export async function approveProposal(
+  callerAddress: string,
+  proposalId: number
+): Promise<void> {
+  await buildAndSubmit(callerAddress, "approve", [
+    nativeToScVal(callerAddress, { type: "address" }),
+    nativeToScVal(BigInt(proposalId), { type: "u64" }),
+  ]);
+}
+
+export async function executeProposal(
+  callerAddress: string,
+  proposalId: number
+): Promise<void> {
+  await buildAndSubmit(callerAddress, "execute", [
+    nativeToScVal(callerAddress, { type: "address" }),
+    nativeToScVal(BigInt(proposalId), { type: "u64" }),
+  ]);
+}
+
+export async function revokeProposal(
+  callerAddress: string,
+  proposalId: number
+): Promise<void> {
+  await buildAndSubmit(callerAddress, "revoke", [
+    nativeToScVal(callerAddress, { type: "address" }),
+    nativeToScVal(BigInt(proposalId), { type: "u64" }),
+  ]);
+}
+
+export async function createProposal(
+  callerAddress: string,
+  to: string,
+  tokenAddress: string,
+  amount: bigint,
+  description: string,
+  deadlineTs: bigint
+): Promise<void> {
+  // Contract signature: create_proposal(proposer, to, amount, token, description, deadline)
+  await buildAndSubmit(callerAddress, "create_proposal", [
+    nativeToScVal(callerAddress, { type: "address" }),  // proposer
+    nativeToScVal(to, { type: "address" }),
+    nativeToScVal(amount, { type: "i128" }),
+    nativeToScVal(tokenAddress, { type: "address" }),
+    nativeToScVal(description, { type: "string" }),
+    nativeToScVal(deadlineTs, { type: "u64" }),
+  ]);
+}

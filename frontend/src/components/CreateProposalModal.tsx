@@ -1,23 +1,94 @@
 import { useState } from "react";
+import { createProposal } from "../lib/submit";
 
-export function CreateProposalModal({ onClose }: { onClose: () => void }) {
+// Testnet token addresses — swap for mainnet when ready
+const TOKEN_ADDRESSES: Record<string, string> = {
+  XLM: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  USDC: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
+  EURC: "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4IQDNC",
+};
+
+type Props = {
+  walletAddress: string | null;
+  onClose: () => void;
+  onSubmitted: () => void;
+};
+
+export function CreateProposalModal({ walletAddress, onClose, onSubmitted }: Props) {
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
-  const [token, setToken] = useState("USDC");
+  const [token, setToken] = useState("XLM");
+  const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit() {
+    if (!walletAddress) {
+      setError("Connect your wallet first.");
+      return;
+    }
+    if (!to.trim() || !amount.trim()) {
+      setError("Recipient and amount are required.");
+      return;
+    }
+
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setError("Enter a valid amount.");
+      return;
+    }
+
+    const tokenAddr = TOKEN_ADDRESSES[token];
+    if (!tokenAddr) {
+      setError("Unknown token.");
+      return;
+    }
+
+    // Stellar uses 7 decimal places: 1 XLM = 10_000_000 stroops
+    const amountStroops = BigInt(Math.round(amountNum * 10_000_000));
+
+    // Deadline: 7 days from now (Unix seconds)
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600);
+
+    setError(null);
+    setSubmitting(true);
+    try {
+      await createProposal(
+        walletAddress,
+        to.trim(),
+        tokenAddr,
+        amountStroops,
+        description.trim(),
+        deadline
+      );
+      onSubmitted();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Transaction failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-md">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-white font-semibold text-lg">New Proposal</h2>
-          <button type="button" onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-xl">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-zinc-500 hover:text-zinc-300 text-xl"
+          >
             ✕
           </button>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label className="text-xs text-zinc-400 block mb-1.5">Recipient Address</label>
+            <label className="text-xs text-zinc-400 block mb-1.5">
+              Recipient Address
+            </label>
             <input
               value={to}
               onChange={(e) => setTo(e.target.value)}
@@ -33,6 +104,9 @@ export function CreateProposalModal({ onClose }: { onClose: () => void }) {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
+                type="number"
+                min="0"
+                step="any"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
               />
             </div>
@@ -43,22 +117,44 @@ export function CreateProposalModal({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setToken(e.target.value)}
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-zinc-500"
               >
-                <option>USDC</option>
                 <option>XLM</option>
+                <option>USDC</option>
                 <option>EURC</option>
               </select>
             </div>
           </div>
 
-          <div className="pt-2">
-            <p className="text-xs text-zinc-500 mb-4">
-              Requires <span className="text-zinc-300 font-medium">3 of 3</span> approvals to execute
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1.5">
+              Description <span className="text-zinc-600">(optional)</span>
+            </label>
+            <input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What is this payment for?"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+            />
+          </div>
+
+          {error && (
+            <p className="text-xs text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
+              {error}
             </p>
+          )}
+
+          <div className="pt-2">
+            {!walletAddress && (
+              <p className="text-xs text-amber-400 mb-3">
+                Connect your Freighter wallet to submit.
+              </p>
+            )}
             <button
               type="button"
-              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-lg font-medium transition-colors"
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-2.5 rounded-lg font-medium transition-colors"
             >
-              Submit Proposal
+              {submitting ? "Submitting…" : "Submit Proposal"}
             </button>
           </div>
         </div>

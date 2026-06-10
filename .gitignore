@@ -1,6 +1,9 @@
 # Rust's output directory
 target
-
+.DS_Store
 # Local settings
 .soroban
 .stellar
+.env
+# Private runbooks — keep local only
+UPGRADE.md

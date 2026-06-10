@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env,
-    IntoVal, String, Symbol, Val, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, BytesN,
+    Env, IntoVal, String, Symbol, Val, Vec,
 };
 
 // ─── Data Types ─────────────────────────────────────────────────────────────
@@ -635,6 +635,22 @@ impl AccordContract {
     /// Returns whether `owner` has approved `proposal_id`.
     pub fn has_approved(env: Env, proposal_id: u64, owner: Address) -> bool {
         read_approval(&env, proposal_id, &owner)
+    }
+
+    // ─── Upgrade ─────────────────────────────────────────────────────────────
+
+    /// Replaces the contract WASM in-place. Keeps all storage (owners, proposals, approvals).
+    /// Caller must be an owner. For stronger guarantees, collect off-chain consensus from
+    /// all owners before calling — only one signature is required on-chain.
+    pub fn upgrade(
+        env: Env,
+        caller: Address,
+        new_wasm_hash: BytesN<32>,
+    ) -> Result<(), ContractError> {
+        caller.require_auth();
+        require_owner(&env, &caller)?;
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        Ok(())
     }
 }
 

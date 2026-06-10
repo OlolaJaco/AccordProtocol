@@ -8,13 +8,27 @@ export function HistoryPage({
   historyProposals: Proposal[];
   onApprove: (id: number) => void;
 }) {
+  const noop = () => {};
+
   return (
     <>
       <h2 className="font-semibold mb-4">Proposal History</h2>
       <div className="space-y-3">
-        {historyProposals.map((proposal) => (
-          <ProposalCard key={proposal.id} proposal={proposal} onApprove={onApprove} />
-        ))}
+        {historyProposals.length === 0 ? (
+          <p className="text-zinc-600 text-sm py-8 text-center">
+            No completed proposals yet
+          </p>
+        ) : (
+          historyProposals.map((proposal) => (
+            <ProposalCard
+              key={proposal.id}
+              proposal={proposal}
+              walletAddress={null}
+              onApprove={onApprove}
+              onExecute={noop}
+            />
+          ))
+        )}
       </div>
     </>
   );

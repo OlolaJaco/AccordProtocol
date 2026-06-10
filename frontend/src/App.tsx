@@ -1,16 +1,21 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { CreateProposalModal } from "./components/CreateProposalModal";
-import { BASE_DASHBOARD_STATS, MOCK_PROPOSALS, OWNERS } from "./data/mockData";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HistoryPage } from "./pages/HistoryPage";
+import { useContract } from "./hooks/useContract";
+import { useWallet } from "./hooks/useWallet";
+import { approveProposal, executeProposal } from "./lib/submit";
 
 type Page = "dashboard" | "history";
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
-  const [proposals, setProposals] = useState(MOCK_PROPOSALS);
   const [showCreate, setShowCreate] = useState(false);
-  const [connected, setConnected] = useState(false);
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txPending, setTxPending] = useState(false);
+
+  const { proposals, owners, stats, loading, error, refresh } = useContract();
+  const wallet = useWallet();
 
   const activeProposals = proposals.filter((p) =>
     ["pending", "ready"].includes(p.status)
@@ -19,55 +24,45 @@ export default function App() {
     ["executed", "expired", "revoked"].includes(p.status)
   );
 
-  const dashboardStats = useMemo(
-    () =>
-      BASE_DASHBOARD_STATS.map((stat) =>
-        stat.label === "Active"
-          ? { ...stat, value: activeProposals.length.toString() }
-          : stat
-      ),
-    [activeProposals.length]
-  );
+  async function withTx(fn: () => Promise<void>) {
+    if (!wallet.address) {
+      await wallet.connect();
+      return;
+    }
+    setTxError(null);
+    setTxPending(true);
+    try {
+      await fn();
+      refresh();
+    } catch (e) {
+      setTxError(e instanceof Error ? e.message : "Transaction failed");
+    } finally {
+      setTxPending(false);
+    }
+  }
 
-  const handleApprove = (id: number) => {
-    setProposals((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
-        const newApprovals = p.approvals + 1;
-        return {
-          ...p,
-          approvals: newApprovals,
-          status: newApprovals >= p.threshold ? "ready" : "pending",
-        };
-      })
-    );
-  };
+  const handleApprove = (id: number) =>
+    withTx(() => approveProposal(wallet.address!, id));
+
+  const handleExecute = (id: number) =>
+    withTx(() => executeProposal(wallet.address!, id));
+
+  function shortenAddr(addr: string) {
+    return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
-      {/* Dev banner — Freighter integration is an open issue */}
-      <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2 text-center">
-        <span className="text-xs text-amber-400">
-          Wallet integration coming soon —{" "}
-          <a
-            href="https://github.com/thegreatfeez/accord-protocol/issues"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:text-amber-300"
-          >
-            contribute on GitHub
-          </a>
-        </span>
-      </div>
-
       <header className="border-b border-zinc-800 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center text-xs font-bold text-black">
-              Q
+              A
             </div>
             <span className="font-semibold tracking-tight">Accord</span>
-            <span className="text-xs text-zinc-600 font-mono hidden sm:block">testnet</span>
+            <span className="text-xs text-zinc-600 font-mono hidden sm:block">
+              testnet
+            </span>
           </div>
 
           <nav className="flex items-center gap-1">
@@ -87,35 +82,85 @@ export default function App() {
             ))}
           </nav>
 
-          <button
-            type="button"
-            onClick={() => setConnected(!connected)}
-            className={`text-sm px-4 py-1.5 rounded-lg font-medium transition-colors ${
-              connected
-                ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                : "bg-emerald-600 hover:bg-emerald-500 text-white"
-            }`}
-          >
-            {connected ? "GDQP2...K7X3" : "Connect Wallet"}
-          </button>
+          {!wallet.installed ? (
+            <a
+              href="https://www.freighter.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm px-4 py-1.5 rounded-lg font-medium bg-amber-600 hover:bg-amber-500 text-white transition-colors"
+            >
+              Install Freighter
+            </a>
+          ) : wallet.address ? (
+            <button
+              type="button"
+              onClick={wallet.disconnect}
+              className="text-sm px-4 py-1.5 rounded-lg font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+            >
+              {shortenAddr(wallet.address)}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={wallet.connect}
+              disabled={wallet.connecting}
+              className="text-sm px-4 py-1.5 rounded-lg font-medium bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white transition-colors"
+            >
+              {wallet.connecting ? "Connecting…" : "Connect Wallet"}
+            </button>
+          )}
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-8">
-        {page === "dashboard" ? (
+        {(txError || error) && !loading && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-6 text-sm text-red-400 flex items-center justify-between">
+            <span>{txError ?? error}</span>
+            <button
+              type="button"
+              onClick={() => { setTxError(null); refresh(); }}
+              className="underline hover:text-red-300 ml-4 shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {txPending && (
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 mb-6 text-sm text-emerald-400">
+            Waiting for confirmation…
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-16 text-zinc-500 text-sm">
+            Loading contract data…
+          </div>
+        ) : page === "dashboard" ? (
           <DashboardPage
             activeProposals={activeProposals}
-            owners={OWNERS}
-            dashboardStats={dashboardStats}
+            owners={owners}
+            dashboardStats={stats}
+            walletAddress={wallet.address}
             onApprove={handleApprove}
+            onExecute={handleExecute}
             onCreateProposal={() => setShowCreate(true)}
           />
         ) : (
-          <HistoryPage historyProposals={historyProposals} onApprove={handleApprove} />
+          <HistoryPage
+            historyProposals={historyProposals}
+            onApprove={handleApprove}
+          />
         )}
       </main>
 
-      {showCreate && <CreateProposalModal onClose={() => setShowCreate(false)} />}
+      {showCreate && (
+        <CreateProposalModal
+          walletAddress={wallet.address}
+          onClose={() => setShowCreate(false)}
+          onSubmitted={refresh}
+        />
+      )}
     </div>
   );
 }
