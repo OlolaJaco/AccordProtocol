@@ -114,7 +114,7 @@ export async function createProposal(
     nativeToScVal(to, { type: "address" }),
     nativeToScVal(amount, { type: "i128" }),
     nativeToScVal(tokenAddress, { type: "address" }),
-    nativeToScVal(description, { type: "string" }),
+    xdr.ScVal.scvString(description),
     nativeToScVal(deadlineTs, { type: "u64" }),
   ]);
 }

@@ -27,8 +27,8 @@ export function CreateProposalModal({ walletAddress, onClose, onSubmitted }: Pro
       setError("Connect your wallet first.");
       return;
     }
-    if (!to.trim() || !amount.trim()) {
-      setError("Recipient and amount are required.");
+    if (!to.trim() || !amount.trim() || !description.trim()) {
+      setError("Recipient, amount, and description are required.");
       return;
     }
 
@@ -126,7 +126,7 @@ export function CreateProposalModal({ walletAddress, onClose, onSubmitted }: Pro
 
           <div>
             <label className="text-xs text-zinc-400 block mb-1.5">
-              Description <span className="text-zinc-600">(optional)</span>
+              Description
             </label>
             <input
               value={description}
