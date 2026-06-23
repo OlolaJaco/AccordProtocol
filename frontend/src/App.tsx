@@ -163,9 +163,10 @@ export default function App() {
             historyProposals={historyProposals}
             onApprove={handleApprove}
           />
+        ) : page === "settings" ? (
+          <SettingsPage stats={stats} />
         ) : (
           <NotFoundPage onGoHome={handleGoHome} />
-          <SettingsPage stats={stats} />
         )}
       </main>
 
