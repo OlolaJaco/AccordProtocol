@@ -4,11 +4,12 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { OwnersPage } from "./pages/OwnersPage";
 import { useContract } from "./hooks/useContract";
 import { useWallet } from "./hooks/useWallet";
 import { approveProposal, executeProposal } from "./lib/submit";
 
-type Page = "dashboard" | "history" | "settings";
+type Page = "dashboard" | "history" | "settings" | "owners";
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -73,7 +74,7 @@ export default function App() {
           </div>
 
           <nav className="flex items-center gap-1">
-            {(["dashboard", "history", "settings"] as Page[]).map((navPage) => (
+            {(["dashboard", "history", "owners", "settings"] as Page[]).map((navPage) => (
               <button
                 key={navPage}
                 type="button"
@@ -158,6 +159,12 @@ export default function App() {
           />
         ) : page === "history" ? (
           <HistoryPage proposals={proposals} onApprove={handleApprove} />
+        ) : page === "owners" ? (
+          <OwnersPage
+            owners={owners}
+            threshold={parseInt(stats.find((s) => s.label === "Threshold")?.value.split(" ")[0] || "0")}
+            totalOwners={owners.length}
+          />
         ) : (
           <>
           <NotFoundPage onGoHome={handleGoHome} />
