@@ -28,17 +28,11 @@ export function HistoryPage({
 }) {
   const [activeTab, setActiveTab] = useState<Filter>("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const noop = () => {};
-
-  const filteredProposals = proposals
-    .filter((p) => activeTab === "all" || p.status === activeTab)
-    .filter((p) =>
-      p.description.toLowerCase().includes(searchTerm.toLowerCase())
-    );
   const [displayedProposals, setDisplayedProposals] = useState<Proposal[]>(proposals);
   const [offset, setOffset] = useState<number>(proposals.length);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  
   const noop = () => {};
 
   // Fetch the total count once on mount
