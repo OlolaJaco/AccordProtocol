@@ -74,6 +74,7 @@ export function mapProposal(raw: any, threshold: number): Proposal {
     status: mapStatus(raw.status),
     deadline: formatDeadline(BigInt(raw.deadline)),
     createdAt: `proposal #${Number(raw.id)}`,
+    proposer: shortenAddr(String(raw.proposer)),
     userHasApproved: false,
   };
 }

@@ -1,77 +1,48 @@
 import { useEffect, useRef } from "react";
-import { rpc } from "@stellar/stellar-sdk";
+import { getContractEvents, getLatestLedger } from "../lib/contract";
 
-const RPC_URL = import.meta.env.VITE_SOROBAN_RPC_URL as string;
-const CONTRACT_ID = import.meta.env.VITE_CONTRACT_ADDRESS as string;
-
-const server = new rpc.Server(RPC_URL);
-
-export function useEventPolling(refresh: () => void, baseInterval: number = 5000) {
-  const lastLedger = useRef<number>(0);
-  const failureCount = useRef<number>(0);
-  const timeoutId = useRef<NodeJS.Timeout | null>(null);
+export function useEventPolling(
+  refresh: () => void | Promise<void>,
+  intervalMs: number
+) {
+  const lastSeenLedger = useRef<number | null>(null);
 
   useEffect(() => {
-    let isCancelled = false;
+    let cancelled = false;
 
-    async function poll() {
-      if (isCancelled) return;
-
+    async function init() {
       try {
-        if (lastLedger.current === 0) {
-          const latestResponse = await server.getLatestLedger();
-          lastLedger.current = latestResponse.sequence;
-        } else {
-          const latestResponse = await server.getLatestLedger();
-          const currentLatest = latestResponse.sequence;
-
-          if (currentLatest > lastLedger.current) {
-            const response = await server.getEvents({
-              startLedger: lastLedger.current + 1,
-              filters: [
-                {
-                  type: "contract",
-                  contractIds: [CONTRACT_ID],
-                },
-              ],
-            });
-
-            lastLedger.current = currentLatest;
-
-            if (response.events && response.events.length > 0) {
-              refresh();
-            }
-          }
+        const currentLedger = await getLatestLedger();
+        if (!cancelled) {
+          lastSeenLedger.current = currentLedger;
         }
-
-        // Success: reset failure count
-        failureCount.current = 0;
       } catch (err) {
-        // Failure: increment failure count
-        failureCount.current += 1;
-        console.error("RPC polling failure:", err);
+        console.error("Failed to initialize event polling ledger checkpoint", err);
       }
-
-      if (isCancelled) return;
-
-      // Calculate next delay:
-      // - 0 failures: use baseInterval (e.g. 5000ms)
-      // - >= 1 failure: doubling delay sequence (1s -> 2s -> 4s -> ...), capped at 30s
-      let nextDelay = baseInterval;
-      if (failureCount.current > 0) {
-        nextDelay = Math.min(1000 * Math.pow(2, failureCount.current - 1), 30000);
-      }
-
-      timeoutId.current = setTimeout(poll, nextDelay);
     }
 
-    poll();
+    init();
+
+    const intervalId = setInterval(async () => {
+      if (lastSeenLedger.current === null) {
+        return;
+      }
+
+      try {
+        const latest = await getContractEvents(lastSeenLedger.current);
+
+        if (latest > lastSeenLedger.current && !cancelled) {
+          await refresh();
+          lastSeenLedger.current = latest;
+        }
+      } catch (err) {
+        console.error("Error during event polling", err);
+      }
+    }, intervalMs);
 
     return () => {
-      isCancelled = true;
-      if (timeoutId.current) {
-        clearTimeout(timeoutId.current);
-      }
+      cancelled = true;
+      clearInterval(intervalId);
     };
-  }, [refresh, baseInterval]);
+  }, [refresh, intervalMs]);
 }

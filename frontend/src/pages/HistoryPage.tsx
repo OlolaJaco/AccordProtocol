@@ -28,6 +28,7 @@ export function HistoryPage({
 }) {
   const [activeTab, setActiveTab] = useState<Filter>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [proposerFilter, setProposerFilter] = useState("");
   const [displayedProposals, setDisplayedProposals] = useState<Proposal[]>(proposals);
   const [offset, setOffset] = useState<number>(proposals.length);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -83,10 +84,16 @@ export function HistoryPage({
     }
   };
 
-  const filteredProposals =
-    activeTab === "all"
-      ? displayedProposals
-      : displayedProposals.filter((p) => p.status === activeTab);
+  const filteredProposals = displayedProposals
+    .filter((p) => activeTab === "all" || p.status === activeTab)
+    .filter((p) =>
+      p.description.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .filter(
+      (p) =>
+        proposerFilter === "" ||
+        p.proposer.toLowerCase().includes(proposerFilter.toLowerCase())
+    );
 
   return (
     <>
@@ -108,6 +115,17 @@ export function HistoryPage({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="mb-4">
+        <input
+          type="text"
+          value={proposerFilter}
+          onChange={(e) => setProposerFilter(e.target.value)}
+          placeholder="Filter by proposer…"
+          aria-label="Filter by proposer"
+          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-white text-sm placeholder-zinc-600 focus:outline-none focus:border-zinc-700 transition-colors"
+        />
       </div>
 
       <div className="mb-4 relative">
@@ -139,7 +157,7 @@ export function HistoryPage({
       <div className="space-y-3">
         {filteredProposals.length === 0 ? (
           <p className="text-zinc-600 text-sm py-8 text-center">
-            {searchTerm
+            {searchTerm || proposerFilter
               ? "No proposals match your search"
               : `No ${activeTab === "all" ? "" : `${activeTab} `}proposals found`}
           </p>
